@@ -28,7 +28,11 @@
 
 package org.opennms.netmgt.syslogd;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.BiConsumer;
 
 import org.opennms.core.time.ZonedDateTimeBuilder;
@@ -67,6 +71,7 @@ public abstract class GrokParserStageSequenceBuilder {
 		INT,
 		MONTH,
 		NOSPACE,
+		HOSTNAME,
 		STRING
 	}
 
@@ -105,6 +110,7 @@ public abstract class GrokParserStageSequenceBuilder {
 		 * @see RFC 3164
 		 * @see RFC 3339
 		 * @see RFC 5424: DATE-MONTH
+		 * TODO: Might need to update this
 		 */
 		month,
 
@@ -198,7 +204,17 @@ public abstract class GrokParserStageSequenceBuilder {
 		/**
 		 * Remaining string message.
 		 */
-		message
+		message,
+
+		/**
+		 * TODO:
+		 */
+		parmSequenceNum,
+
+		/**
+		 * TODO
+		 */
+		parmComponentId
 	}
 
 	/**
@@ -272,6 +288,10 @@ public abstract class GrokParserStageSequenceBuilder {
 			case year:
 				return (s,v) -> {
 					s.message.setYear(v);
+				};
+			case parmSequenceNum:
+				return (s, v) -> {
+					s.message.addParameter(SyslogMessage.ParameterKeys.sequenceNum.toString(), v.toString());
 				};
 			default:
 				throw new IllegalArgumentException(String.format("Semantic type %s does not have an integer value", semanticString));
@@ -361,9 +381,25 @@ public abstract class GrokParserStageSequenceBuilder {
 						break;
 					}
 				};
+			case month:
+				return (s, v) -> {
+					int month;
+					try {
+						month = new SimpleDateFormat("MMM", Locale.ENGLISH).parse(v).toInstant().atZone(
+								ZoneId.systemDefault()).toLocalDate().getMonthValue();
+
+					} catch (ParseException e) {
+						throw new IllegalArgumentException(String.format("Could not parse month '%s'", v));
+					}
+					s.message.setMonth(month);
+				};
 			case timezone:
 				return (s,v) -> {
 					s.message.setZoneId(ZonedDateTimeBuilder.parseZoneId(v));
+				};
+			case parmComponentId:
+				return (s,v) -> {
+					s.message.addParameter(SyslogMessage.ParameterKeys.componentId.toString(), v);
 				};
 			default:
 				throw new IllegalArgumentException(String.format("Semantic type %s does not have a string value", semanticString));
@@ -449,6 +485,12 @@ public abstract class GrokParserStageSequenceBuilder {
 						// factory.character(c);
 						// break;
 						throw new UnsupportedOperationException("Cannot support escape sequence directly after a STRING pattern yet");
+					case HOSTNAME:
+					// TODO: We need to peek forward to the escaped character and then do the same as the default case
+					// factory.stringUntil(String.valueOf(c), semanticStringToEventBuilder(semanticString));
+					// factory.character(c);
+					// break;
+					throw new UnsupportedOperationException("Cannot support escape sequence directly after a HOSTNAME pattern yet");
 					case INT:
 						factory.integer(semanticIntegerToField(semanticString));
 						break;
@@ -471,6 +513,7 @@ public abstract class GrokParserStageSequenceBuilder {
 					case STRING:
 						// TODO: Can we handle this case?
 						throw new IllegalArgumentException(String.format("Invalid pattern: %s:%s does not have a trailing delimiter, cannot determine end of string", patternString, semanticString));
+					// TODO: Handle HOSTNAME?
 					case INT:
 						factory.integer(semanticIntegerToField(semanticString));
 						break;
@@ -487,6 +530,10 @@ public abstract class GrokParserStageSequenceBuilder {
 					case NOSPACE:
 					case STRING:
 						factory.stringUntilWhitespace(semanticStringToField(semanticString));
+						factory.whitespace();
+						break;
+					case HOSTNAME:
+						factory.hostname(semanticStringToField(semanticString));
 						factory.whitespace();
 						break;
 					case INT:
@@ -517,6 +564,9 @@ public abstract class GrokParserStageSequenceBuilder {
 						factory.monthString(semanticIntegerToField(semanticString));
 						factory.character(c);
 						break;
+					case HOSTNAME:
+						factory.stringUntil(String.valueOf(c), semanticStringToField(semanticString));
+						factory.character(c);
 					}
 				}
 				pattern = new StringBuilder();

@@ -33,7 +33,10 @@ import java.net.UnknownHostException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.ZoneId;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.TimeZone;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
@@ -85,6 +88,8 @@ public class SyslogMessage implements Cloneable {
     private String m_messageId;
     private String m_message;
 
+    private final Map<String,String> m_parameters = new HashMap<>();
+
     public SyslogMessage() {
     }
 
@@ -108,6 +113,7 @@ public class SyslogMessage implements Cloneable {
      * @param processId
      * @param messageId
      * @param message
+     * @param parameters
      */
     protected SyslogMessage(
         final SyslogFacility facility,
@@ -126,7 +132,8 @@ public class SyslogMessage implements Cloneable {
         final String processName,
         final String processId,
         final String messageId,
-        final String message
+        final String message,
+        final Map<String, String> parameters
     ) {
         m_facility = facility;
         m_severity = severity;
@@ -145,6 +152,7 @@ public class SyslogMessage implements Cloneable {
         m_processId = processId;
         m_messageId = messageId;
         m_message = message;
+        m_parameters.putAll(parameters);
     }
 
     public Class<? extends SyslogParser> getParserClass() {
@@ -311,6 +319,14 @@ public class SyslogMessage implements Cloneable {
         m_message = message;
     }
 
+    public void addParameter(String key, String value) {
+        m_parameters.put(key, value);
+    }
+
+    public Map<String, String> getParameters() {
+        return Collections.unmodifiableMap(m_parameters);
+    }
+
     private int getPriorityField() {
         if (m_severity != null && m_facility != null) {
             return m_severity.getPriority(m_facility);
@@ -366,6 +382,7 @@ public class SyslogMessage implements Cloneable {
             .append("process name", m_processName)
             .append("process ID", m_processId)
             .append("message", m_message)
+            .append("parameters", m_parameters)
             .toString();
     }
 
@@ -396,7 +413,16 @@ public class SyslogMessage implements Cloneable {
             m_processName,
             m_processId,
             m_messageId,
-            m_message
+            m_message,
+            m_parameters
         );
+    }
+
+    /**
+     * TODO
+     */
+    public enum ParameterKeys {
+        sequenceNum,
+        componentId
     }
 }

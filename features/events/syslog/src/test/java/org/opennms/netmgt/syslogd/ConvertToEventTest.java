@@ -479,4 +479,89 @@ public class ConvertToEventTest {
         Date eventTime = event.getTime();
         assertEquals(messageTime, eventTime);
     }
+
+    /**
+     * TODO: Testing
+     * '<189>: 2018 Jul 16 23:56:11 CDT: %ETHPORT-5-IF_DOWN_LINK_FAILURE: Interface Ethernet119/1/36 is down (Link failure)'
+     */
+    @Test
+    public void testNewPatternA() throws ParseException {
+        int messageFacilityPriority = 189;
+        String messageContent = "%ETHPORT-5-IF_DOWN_LINK_FAILURE: Interface Ethernet119/1/36 is down (Link failure)";
+        String timeZone = "CDT";
+        String date = "2018 Jul 16 23:56:11";
+        String syslogMessage = "<" + messageFacilityPriority + ">: " + date + " " + timeZone + ": " + messageContent;
+        Event event = parseSyslog("testNewPatternA", radixConfig, syslogMessage, new Date());
+        assertEquals(SyslogSeverity.getSeverityForCode(messageFacilityPriority).toString(), event.getParm("severity").getValue().getContent());
+        assertEquals(messageContent, event.getLogmsg().getContent());
+        // TODO: Check time
+//        SimpleDateFormat expectedDate = new SimpleDateFormat("yyyy MMM dd HH:MM:SS ZZZZ");
+//        Date d = expectedDate.parse(date + " " + timeZone);
+//        assertEquals(d,event.getTime());
+
+//        syslogMessage = "<188>1421602: Jul 17 04:36:01.993: %CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet0/43 (503), with Switch GigabitEthernet1/0/24 (1).";
+//        event = parseSyslog("testNewPatterns", radixConfig, syslogMessage, new Date());
+    }
+
+    /**
+     * TODO: Testing
+     * '%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet5/9 (75), with switch.fqdn.com GigabitEthernet2/4/21 (2)'
+     */
+    @Test
+    public void testNewPatternB() {
+        String syslogMessage = "%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet5/9 (75), with switch.fqdn.com GigabitEthernet2/4/21 (2)";
+        Event event = parseSyslog("testNewPatternB", radixConfig, syslogMessage, new Date());
+        assertEquals(syslogMessage, event.getLogmsg().getContent());
+    }
+
+    /**
+     * TODO: Testing
+     * '<189>71863: LC/0/0/CPU0:Jul 16 23:49:47.738 : ifmgr[217]: %PKT_INFRA-LINEPROTO-5-UPDOWN : Line protocol on Interface Serial0/0/0/0/1/2/2:0, changed state to Up'
+     */
+    @Test
+    public void testNewPatternC() {
+        int messageFacilityPriority = 189;
+        String sequenceNum = "71863";
+        String componentId = "LC/0/0/CPU0";
+        String processName = "ifmgr";
+        String processId = "217";
+        String messageContent = "%PKT_INFRA-LINEPROTO-5-UPDOWN : Line protocol on Interface Serial0/0/0/0/1/2/2:0, changed state to Up";
+        String syslogMessage = "<" + messageFacilityPriority + ">" + sequenceNum + ": " + componentId + ":Jul 16 23:49:47.738 : " + processName + "[" + processId + "]: " + messageContent;
+        Event event = parseSyslog("testNewPatternC", radixConfig, syslogMessage, new Date());
+        assertEquals(sequenceNum, event.getParm(SyslogMessage.ParameterKeys.sequenceNum.toString()).getValue().getContent());
+        assertEquals(componentId, event.getParm(SyslogMessage.ParameterKeys.componentId.toString()).getValue().getContent());
+        assertEquals(processName, event.getParm("process").getValue().getContent());
+        assertEquals(processId, event.getParm("processid").getValue().getContent());
+        assertEquals(messageContent, event.getLogmsg().getContent());
+    }
+
+    /**
+     * TODO: Testing
+     * '<188>1421602: Jul 17 04:36:01.993: %CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet0/43 (503), with Switch GigabitEthernet1/0/24 (1).'
+     */
+    @Test
+    public void testNewPatternD() {
+        String messageContent = "%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet0/43 (503), with Switch GigabitEthernet1/0/24 (1).";
+        String syslogMessage = "<188>1421602: Jul 17 04:36:01.993: " + messageContent;
+        Event event = parseSyslog("testNewPatternD", radixConfig, syslogMessage, new Date());
+        assertEquals(messageContent, event.getLogmsg().getContent());
+    }
+
+    /**
+     * TODO: Testing
+     */
+    @Test
+    public void testScenario() {
+        // <%{INT:facilityPriority>%{INT:year} %{MONTH:month} %{INT:day} %{INT:hour}:%{INT:minute}:%{INT:second} %{STRING:timezone} %{STRING:hostname} %{STRING:message}
+        String messageContent = "1,2017/06/02 01:59:06,0009C102229, THREAT";
+        String syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT *kc2dmz-fw-01* " + messageContent;
+        Event event = parseSyslog("testScenario", radixConfig, syslogMessage, new Date());
+        assertEquals(messageContent, event.getLogmsg().getContent());
+
+        // <%{INT:facilityPriority>%{INT:year} %{MONTH:month} %{INT:day} %{INT:hour}:%{INT:minute}:%{INT:second} %{STRING:timezone} %{STRING:hostname} %{STRING:message}
+        messageContent = "1,2017/06/02 01:59:06,0009C102229, THREAT";
+        syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT " + messageContent;
+        event = parseSyslog("testScenario", radixConfig, syslogMessage, new Date());
+        assertEquals(messageContent, event.getLogmsg().getContent());
+    }
 }

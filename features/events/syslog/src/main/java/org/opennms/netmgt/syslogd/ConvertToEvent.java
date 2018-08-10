@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -144,6 +145,10 @@ public class ConvertToEvent {
         // Set values from SyslogMessage in the EventBuilder
 
         bldr.addParam("hostname", message.getHostName());
+
+        for (Map.Entry<String, String> parameterEntry : message.getParameters().entrySet()) {
+            bldr.addParam(parameterEntry.getKey(), parameterEntry.getValue());
+        }
 
         final InetAddress hostAddress = message.getHostAddress();
         if (hostAddress != null) {

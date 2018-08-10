@@ -172,6 +172,11 @@ public class ParserStageSequenceBuilder {
 		return this;
 	}
 
+	public ParserStageSequenceBuilder hostname(BiConsumer<ParserState, String> consumer) {
+		addStage(new MatchHostname(consumer));
+		return this;
+	}
+
 	public ParserStageSequenceBuilder monthString(BiConsumer<ParserState, Integer> consumer) {
 		addStage(new MatchMonth(consumer));
 		return this;
@@ -773,6 +778,48 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
+
+	/**
+	 * Match a hostname
+	 */
+	static class MatchHostname extends AbstractParserStage<String> {
+		MatchHostname(BiConsumer<ParserState,String> consumer) {
+			super(consumer);
+		}
+		
+		@Override
+		public AcceptResult acceptChar(ParserStageState state, char c) {
+			// These are the only valid hostname characters
+            
+            // TODO: We need to decide what a 'hostname' is. Should it match only hostnames,
+            // or should it match IP addresses too? Should it match character sequences that
+            // are invalid in current specs such as starting with a number? I've made it
+            // as permissive as possible for now to not break existing functionality while
+            // still being strict enough to not match some strings that were otherwise
+            // matching as hostnames in the previous %{STRING:hostname} implementation.
+            
+            // TODO: _ and . are illegal in hostnames but some of our tests use them...
+			if (Character.isDigit(c) || Character.isLetter(c) || c == '-' || c == '_' || c== '.'){
+				accumulate(state, c);
+				return AcceptResult.CONTINUE;
+			} else {
+				// If any characters were accumulated, complete
+				if (getAccumulatedSize(state) > 0) {
+					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+				} else {
+					return AcceptResult.CANCEL;
+				}
+			}
+		}
+
+		@Override
+		public String getValue(ParserStageState state) {
+			return getAccumulatedValue(state);
+		}
+		
+		// TODO equals,tostring
+	}
+	
 	/**
 	 * Match an integer.
 	 */
