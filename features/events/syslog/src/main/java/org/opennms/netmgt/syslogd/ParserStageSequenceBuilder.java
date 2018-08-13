@@ -172,8 +172,38 @@ public class ParserStageSequenceBuilder {
 		return this;
 	}
 
+	public ParserStageSequenceBuilder hostMatcherForPattern(GrokParserStageSequenceBuilder.GrokPattern pattern,
+															BiConsumer<ParserState, String> consumer) {
+		switch (pattern) {
+			case HOSTNAME:
+				return hostname(consumer);
+			case HOSTNAMEORIP:
+				return hostnameOrIP(consumer);
+			case IPADDRESS:
+				return ipAddress(consumer);
+			default:
+				throw new IllegalArgumentException("Unsupported pattern.");
+		}
+	}
+
 	public ParserStageSequenceBuilder hostname(BiConsumer<ParserState, String> consumer) {
-		addStage(new MatchHostname(consumer));
+		addStage(new HostMatcher(consumer, HostMatcher.hostNameMatcher));
+		return this;
+	}
+
+	public ParserStageSequenceBuilder ipAddress(BiConsumer<ParserState, String> consumer) {
+		addStage(new HostMatcher(consumer, HostMatcher.ipAddressMatcher));
+		return this;
+	}
+
+	public ParserStageSequenceBuilder hostnameOrIP(BiConsumer<ParserState, String> consumer) {
+		addStage(new HostMatcher(consumer, HostMatcher.hostnameOrIPMatcher));
+		return this;
+	}
+
+	// TODO: This would be nice to have
+	public ParserStageSequenceBuilder stringStartsWithPercent(BiConsumer<ParserState, String> consumer) {
+		//addStage(new MatchStringStartsWith(consumer, '%'));
 		return this;
 	}
 
@@ -778,28 +808,31 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
-
 	/**
-	 * Match a hostname
+	 * A matcher used for host names and IP addresses.
 	 */
-	static class MatchHostname extends AbstractParserStage<String> {
-		MatchHostname(BiConsumer<ParserState,String> consumer) {
-			super(consumer);
+	static class HostMatcher extends AbstractParserStage<String> {
+		@FunctionalInterface
+		private interface CharPredicate {
+			boolean test(char c);
 		}
-		
+
+		private static final CharPredicate hostNameMatcher = c -> Character.isDigit(c) || Character.isLetter(c)
+				|| "-._".indexOf(c) >= 0;
+		private static final CharPredicate ipAddressMatcher = c -> Character.digit(c, 16) >= 0
+				|| ".:".indexOf(c) > 0;
+		private static final CharPredicate hostnameOrIPMatcher = c -> hostNameMatcher.test(c)
+				|| ipAddressMatcher.test(c);
+		private final CharPredicate charMatcher;
+
+		HostMatcher(BiConsumer<ParserState, String> consumer, CharPredicate charMatcher) {
+			super(consumer);
+			this.charMatcher = charMatcher;
+		}
+
 		@Override
 		public AcceptResult acceptChar(ParserStageState state, char c) {
-			// These are the only valid hostname characters
-            
-            // TODO: We need to decide what a 'hostname' is. Should it match only hostnames,
-            // or should it match IP addresses too? Should it match character sequences that
-            // are invalid in current specs such as starting with a number? I've made it
-            // as permissive as possible for now to not break existing functionality while
-            // still being strict enough to not match some strings that were otherwise
-            // matching as hostnames in the previous %{STRING:hostname} implementation.
-            
-            // TODO: _ and . are illegal in hostnames but some of our tests use them...
-			if (Character.isDigit(c) || Character.isLetter(c) || c == '-' || c == '_' || c== '.'){
+			if (charMatcher.test(c)) {
 				accumulate(state, c);
 				return AcceptResult.CONTINUE;
 			} else {
@@ -816,8 +849,20 @@ public class ParserStageSequenceBuilder {
 		public String getValue(ParserStageState state) {
 			return getAccumulatedValue(state);
 		}
-		
-		// TODO equals,tostring
+
+		@Override
+		public boolean equals(Object o) {
+			if (o == null) return false;
+			if (o == this) return true;
+			if (!(o instanceof HostMatcher)) return false;
+			HostMatcher other = (HostMatcher) o;
+			return Objects.equals(m_resultConsumer, other.m_resultConsumer);
+		}
+
+		@Override
+		public String toString() {
+			return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).toString();
+		}
 	}
 	
 	/**

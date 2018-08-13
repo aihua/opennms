@@ -289,6 +289,10 @@ public class ConvertToEventTest {
                 assertTrue("messageid parms do not match", compare("messageid", messageids.toArray(new String[0])));
                 assertTrue("severity parms do not match", compare("severity", severities.toArray(new String[0])));
                 assertTrue("timestamp parms do not match", compare("timestamp", timestamps.toArray(new String[0])));
+                if( ! compare("process", processes.toArray(new String[0])))
+                {
+                    int a =0;
+                }
                 assertTrue("process parms do not match", compare("process", processes.toArray(new String[0])));
                 assertTrue("service parms do not match", compare("service", services.toArray(new String[0])));
                 assertTrue("processid parms do not match", compare("processid", processids.toArray(new String[0])));
@@ -554,7 +558,7 @@ public class ConvertToEventTest {
     public void testScenario() {
         // <%{INT:facilityPriority>%{INT:year} %{MONTH:month} %{INT:day} %{INT:hour}:%{INT:minute}:%{INT:second} %{STRING:timezone} %{STRING:hostname} %{STRING:message}
         String messageContent = "1,2017/06/02 01:59:06,0009C102229, THREAT";
-        String syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT *kc2dmz-fw-01* " + messageContent;
+        String syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT *kc2dmz-fw-01{}* " + messageContent;
         Event event = parseSyslog("testScenario", radixConfig, syslogMessage, new Date());
         assertEquals(messageContent, event.getLogmsg().getContent());
 

@@ -67,11 +67,13 @@ public abstract class GrokParserStageSequenceBuilder {
 		END_PATTERN
 	}
 
-	private static enum GrokPattern {
+	enum GrokPattern {
+		HOSTNAME,
+		HOSTNAMEORIP,
 		INT,
+		IPADDRESS,
 		MONTH,
 		NOSPACE,
-		HOSTNAME,
 		STRING
 	}
 
@@ -473,6 +475,15 @@ public abstract class GrokParserStageSequenceBuilder {
 				switch(c) {
 				case '\\':
 					switch(patternType) {
+					case HOSTNAME:
+					case HOSTNAMEORIP:
+					case IPADDRESS:
+						// TODO: We need to peek forward to the escaped character and then do the same as the default case
+						// factory.stringUntil(String.valueOf(c), semanticStringToEventBuilder(semanticString));
+						// factory.character(c);
+						// break;
+						throw new UnsupportedOperationException("Cannot support escape sequence directly after a " +
+								patternType + " pattern yet");
 					case NOSPACE:
 						// TODO: We need to peek forward to the escaped character and then do the same as the default case
 						// factory.stringUntil(MatchUntil.WHITESPACE + c, semanticStringToEventBuilder(semanticString));
@@ -485,12 +496,6 @@ public abstract class GrokParserStageSequenceBuilder {
 						// factory.character(c);
 						// break;
 						throw new UnsupportedOperationException("Cannot support escape sequence directly after a STRING pattern yet");
-					case HOSTNAME:
-					// TODO: We need to peek forward to the escaped character and then do the same as the default case
-					// factory.stringUntil(String.valueOf(c), semanticStringToEventBuilder(semanticString));
-					// factory.character(c);
-					// break;
-					throw new UnsupportedOperationException("Cannot support escape sequence directly after a HOSTNAME pattern yet");
 					case INT:
 						factory.integer(semanticIntegerToField(semanticString));
 						break;
@@ -511,9 +516,11 @@ public abstract class GrokParserStageSequenceBuilder {
 						factory.whitespace();
 						break;
 					case STRING:
+					case HOSTNAME:
+					case HOSTNAMEORIP:
+					case IPADDRESS:
 						// TODO: Can we handle this case?
 						throw new IllegalArgumentException(String.format("Invalid pattern: %s:%s does not have a trailing delimiter, cannot determine end of string", patternString, semanticString));
-					// TODO: Handle HOSTNAME?
 					case INT:
 						factory.integer(semanticIntegerToField(semanticString));
 						break;
@@ -533,7 +540,14 @@ public abstract class GrokParserStageSequenceBuilder {
 						factory.whitespace();
 						break;
 					case HOSTNAME:
-						factory.hostname(semanticStringToField(semanticString));
+					case HOSTNAMEORIP:
+					case IPADDRESS:
+						try {
+							factory.hostMatcherForPattern(patternType, semanticStringToField(semanticString));
+						} catch (IllegalArgumentException e) {
+							throw new IllegalArgumentException(String.format("Pattern: %s ist not supported for host " +
+									"matching.", patternType));
+						}
 						factory.whitespace();
 						break;
 					case INT:
@@ -565,6 +579,9 @@ public abstract class GrokParserStageSequenceBuilder {
 						factory.character(c);
 						break;
 					case HOSTNAME:
+					case HOSTNAMEORIP:
+					case IPADDRESS:
+						// TODO: These can't use stringUntil since not all string characters are valid
 						factory.stringUntil(String.valueOf(c), semanticStringToField(semanticString));
 						factory.character(c);
 					}
