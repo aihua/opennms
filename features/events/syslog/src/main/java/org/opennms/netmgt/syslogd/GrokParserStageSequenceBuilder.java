@@ -112,7 +112,6 @@ public abstract class GrokParserStageSequenceBuilder {
 		 * @see RFC 3164
 		 * @see RFC 3339
 		 * @see RFC 5424: DATE-MONTH
-		 * TODO: Might need to update this
 		 */
 		month,
 
@@ -292,9 +291,8 @@ public abstract class GrokParserStageSequenceBuilder {
 					s.message.setYear(v);
 				};
 			case parmSequenceNum:
-				return (s, v) -> {
-					s.message.addParameter(SyslogMessage.ParameterKeys.sequenceNum.toString(), v.toString());
-				};
+				return (s, v) -> s.message.addParameter(SyslogMessage.ParameterKeys.sequenceNum.toString(),
+						v.toString());
 			default:
 				throw new IllegalArgumentException(String.format("Semantic type %s does not have an integer value", semanticString));
 			}
@@ -545,7 +543,7 @@ public abstract class GrokParserStageSequenceBuilder {
 						try {
 							factory.hostMatcherForPattern(patternType, semanticStringToField(semanticString));
 						} catch (IllegalArgumentException e) {
-							throw new IllegalArgumentException(String.format("Pattern: %s ist not supported for host " +
+							throw new IllegalArgumentException(String.format("Pattern: %s is not supported for host " +
 									"matching.", patternType));
 						}
 						factory.whitespace();
@@ -581,8 +579,13 @@ public abstract class GrokParserStageSequenceBuilder {
 					case HOSTNAME:
 					case HOSTNAMEORIP:
 					case IPADDRESS:
-						// TODO: These can't use stringUntil since not all string characters are valid
-						factory.stringUntil(String.valueOf(c), semanticStringToField(semanticString));
+						try {
+							factory.hostUntilForPattern(patternType, String.valueOf(c),
+									semanticStringToField(semanticString));
+						} catch (IllegalArgumentException e) {
+							throw new IllegalArgumentException(String.format("Pattern: %s is not supported for host " +
+									"matching.", patternType));
+						}						
 						factory.character(c);
 					}
 				}

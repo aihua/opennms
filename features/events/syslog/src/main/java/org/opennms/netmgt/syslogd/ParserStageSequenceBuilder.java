@@ -62,6 +62,18 @@ import org.slf4j.LoggerFactory;
 public class ParserStageSequenceBuilder {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ParserStageSequenceBuilder.class);
+	private static final CharPredicate hostNameMatcher = c -> Character.isDigit(c) || Character.isLetter(c)
+			|| "-._".indexOf(c) >= 0;
+	private static final CharPredicate ipAddressMatcher = c -> Character.digit(c, 16) >= 0
+			|| ".:".indexOf(c) > 0;
+	private static final CharPredicate hostnameOrIPMatcher = c -> hostNameMatcher.test(c)
+			|| ipAddressMatcher.test(c);
+
+	// There's no builtin predicate for char primitives... so here's one
+	@FunctionalInterface
+	private interface CharPredicate {
+		boolean test(char c);
+	}
 
 	/**
 	 * The state of an individual {@link ParserStage} operation.
@@ -187,17 +199,17 @@ public class ParserStageSequenceBuilder {
 	}
 
 	public ParserStageSequenceBuilder hostname(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, HostMatcher.hostNameMatcher));
+		addStage(new HostMatcher(consumer, hostNameMatcher));
 		return this;
 	}
 
 	public ParserStageSequenceBuilder ipAddress(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, HostMatcher.ipAddressMatcher));
+		addStage(new HostMatcher(consumer, ipAddressMatcher));
 		return this;
 	}
 
 	public ParserStageSequenceBuilder hostnameOrIP(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, HostMatcher.hostnameOrIPMatcher));
+		addStage(new HostMatcher(consumer, hostnameOrIPMatcher));
 		return this;
 	}
 
@@ -212,8 +224,32 @@ public class ParserStageSequenceBuilder {
 		return this;
 	}
 
-	public ParserStageSequenceBuilder stringUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchStringUntil(consumer, ends));
+	public ParserStageSequenceBuilder hostUntilForPattern(GrokParserStageSequenceBuilder.GrokPattern pattern,
+														  String ends, BiConsumer<ParserState,String> consumer) {
+		switch (pattern) {
+			case HOSTNAME:
+				return hostNameUntil(ends, consumer);
+			case HOSTNAMEORIP:
+				return hostNameOrIPUntil(ends, consumer);
+			case IPADDRESS:
+				return ipAddressUntil(ends, consumer);
+			default:
+				throw new IllegalArgumentException("Unsupported pattern.");
+		}
+	}
+
+	public ParserStageSequenceBuilder hostNameUntil(String ends, BiConsumer<ParserState,String> consumer) {
+		addStage(new MatchHostUntil(consumer, ends, hostNameMatcher));		
+		return this;
+	}
+
+	public ParserStageSequenceBuilder hostNameOrIPUntil(String ends, BiConsumer<ParserState,String> consumer) {
+		addStage(new MatchHostUntil(consumer, ends, hostnameOrIPMatcher));
+		return this;
+	}
+
+	public ParserStageSequenceBuilder ipAddressUntil(String ends, BiConsumer<ParserState,String> consumer) {
+		addStage(new MatchHostUntil(consumer, ends, ipAddressMatcher));
 		return this;
 	}
 
@@ -229,6 +265,11 @@ public class ParserStageSequenceBuilder {
 
 	public ParserStageSequenceBuilder intUntilWhitespace(BiConsumer<ParserState,Integer> consumer) {
 		addStage(new MatchIntegerUntil(consumer, MatchUntil.WHITESPACE));
+		return this;
+	}
+
+	public ParserStageSequenceBuilder stringUntil(String ends, BiConsumer<ParserState,String> consumer) {
+		addStage(new MatchStringUntil(consumer, ends));
 		return this;
 	}
 
@@ -690,8 +731,8 @@ public class ParserStageSequenceBuilder {
 	static abstract class MatchUntil<R> extends AbstractParserStage<R> {
 		public static final String WHITESPACE = "\\s";
 
-		private final char[] m_end;
-		private boolean m_endOnwhitespace = false;
+		protected final char[] m_end;
+		protected boolean m_endOnwhitespace = false;
 
 		MatchUntil(BiConsumer<ParserState,R> consumer, char end) {
 			super(consumer);
@@ -773,6 +814,51 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
+	/**
+	 * TODO
+	 */
+	static class MatchHostUntil extends MatchUntil<String> {
+		private final CharPredicate charMatcher;
+		
+		public MatchHostUntil(BiConsumer<ParserState,String> consumer, char end, CharPredicate charMatcher) {
+			super(consumer, end);
+			this.charMatcher = charMatcher;
+		}
+
+		public MatchHostUntil(BiConsumer<ParserState,String> consumer, String ends, CharPredicate charMatcher) {
+			super(consumer, ends);
+			this.charMatcher = charMatcher;
+		}
+
+		@Override
+		public AcceptResult acceptChar(ParserStageState state, char c) {
+			for (char end : m_end) {
+				if (end == c || ! charMatcher.test(c)) {
+					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+				}
+			}
+			// TODO: Make this more efficient?
+			if (m_endOnwhitespace && "".equals(String.valueOf(c).trim())) {
+				return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+			}
+			accumulate(state, c);
+			return AcceptResult.CONTINUE;
+		}
+		
+		@Override
+		public String getValue(ParserStageState state) {
+			return getAccumulatedValue(state);
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (o == null) return false;
+			if (o == this) return true;
+			if (!(o instanceof MatchHostUntil)) return false;
+			return super.equals(o);
+		}
+	}
+
 	static class MatchIntegerUntil extends MatchUntil<Integer> {
 		public MatchIntegerUntil(BiConsumer<ParserState,Integer> consumer, char end) {
 			super(consumer, end);
@@ -812,17 +898,6 @@ public class ParserStageSequenceBuilder {
 	 * A matcher used for host names and IP addresses.
 	 */
 	static class HostMatcher extends AbstractParserStage<String> {
-		@FunctionalInterface
-		private interface CharPredicate {
-			boolean test(char c);
-		}
-
-		private static final CharPredicate hostNameMatcher = c -> Character.isDigit(c) || Character.isLetter(c)
-				|| "-._".indexOf(c) >= 0;
-		private static final CharPredicate ipAddressMatcher = c -> Character.digit(c, 16) >= 0
-				|| ".:".indexOf(c) > 0;
-		private static final CharPredicate hostnameOrIPMatcher = c -> hostNameMatcher.test(c)
-				|| ipAddressMatcher.test(c);
 		private final CharPredicate charMatcher;
 
 		HostMatcher(BiConsumer<ParserState, String> consumer, CharPredicate charMatcher) {
