@@ -239,17 +239,17 @@ public class ParserStageSequenceBuilder {
 	}
 
 	public ParserStageSequenceBuilder hostNameUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchHostUntil(consumer, ends, hostNameMatcher));		
+		addStage(new MatchStringUntil(consumer, ends, hostNameMatcher));		
 		return this;
 	}
 
 	public ParserStageSequenceBuilder hostNameOrIPUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchHostUntil(consumer, ends, hostnameOrIPMatcher));
+		addStage(new MatchStringUntil(consumer, ends, hostnameOrIPMatcher));
 		return this;
 	}
 
 	public ParserStageSequenceBuilder ipAddressUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchHostUntil(consumer, ends, ipAddressMatcher));
+		addStage(new MatchStringUntil(consumer, ends, ipAddressMatcher));
 		return this;
 	}
 
@@ -734,6 +734,9 @@ public class ParserStageSequenceBuilder {
 		protected final char[] m_end;
 		protected boolean m_endOnwhitespace = false;
 
+		// By default we will allow any character through
+		private CharPredicate charMatcher = (c) -> true;
+
 		MatchUntil(BiConsumer<ParserState,R> consumer, char end) {
 			super(consumer);
 			m_end = new char[] { end };
@@ -755,10 +758,16 @@ public class ParserStageSequenceBuilder {
 			m_end = end.toCharArray();
 		}
 
+		MatchUntil(BiConsumer<ParserState,R> consumer, String end, CharPredicate charMatcher) {
+			this(consumer, end);
+			this.charMatcher = charMatcher;
+		}
+		
+
 		@Override
 		public AcceptResult acceptChar(ParserStageState state, char c) {
 			for (char end : m_end) {
-				if (end == c) {
+				if (end == c || ! charMatcher.test(c)) {
 					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
 				}
 			}
@@ -800,6 +809,10 @@ public class ParserStageSequenceBuilder {
 			super(consumer, ends);
 		}
 
+		public MatchStringUntil(BiConsumer<ParserState,String> consumer, String ends, CharPredicate charMatcher) {
+			super(consumer, ends, charMatcher);
+		}
+
 		@Override
 		public String getValue(ParserStageState state) {
 			return getAccumulatedValue(state);
@@ -817,47 +830,42 @@ public class ParserStageSequenceBuilder {
 	/**
 	 * TODO
 	 */
-	static class MatchHostUntil extends MatchUntil<String> {
-		private final CharPredicate charMatcher;
-		
-		public MatchHostUntil(BiConsumer<ParserState,String> consumer, char end, CharPredicate charMatcher) {
-			super(consumer, end);
-			this.charMatcher = charMatcher;
-		}
-
-		public MatchHostUntil(BiConsumer<ParserState,String> consumer, String ends, CharPredicate charMatcher) {
-			super(consumer, ends);
-			this.charMatcher = charMatcher;
-		}
-
-		@Override
-		public AcceptResult acceptChar(ParserStageState state, char c) {
-			for (char end : m_end) {
-				if (end == c || ! charMatcher.test(c)) {
-					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
-				}
-			}
-			// TODO: Make this more efficient?
-			if (m_endOnwhitespace && "".equals(String.valueOf(c).trim())) {
-				return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
-			}
-			accumulate(state, c);
-			return AcceptResult.CONTINUE;
-		}
-		
-		@Override
-		public String getValue(ParserStageState state) {
-			return getAccumulatedValue(state);
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (o == null) return false;
-			if (o == this) return true;
-			if (!(o instanceof MatchHostUntil)) return false;
-			return super.equals(o);
-		}
-	}
+//	static class MatchHostUntil extends MatchStringUntil {
+//		private final CharPredicate charMatcher;
+//		
+//		public MatchHostUntil(BiConsumer<ParserState,String> consumer, char end, CharPredicate charMatcher) {
+//			super(consumer, end);
+//			this.charMatcher = charMatcher;
+//		}
+//
+//		public MatchHostUntil(BiConsumer<ParserState,String> consumer, String ends, CharPredicate charMatcher) {
+//			super(consumer, ends);
+//			this.charMatcher = charMatcher;
+//		}
+//
+//		@Override
+//		public AcceptResult acceptChar(ParserStageState state, char c) {
+//			for (char end : m_end) {
+//				if (end == c || ! charMatcher.test(c)) {
+//					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+//				}
+//			}
+//			// TODO: Make this more efficient?
+//			if (m_endOnwhitespace && "".equals(String.valueOf(c).trim())) {
+//				return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+//			}
+//			accumulate(state, c);
+//			return AcceptResult.CONTINUE;
+//		}
+//
+//		@Override
+//		public boolean equals(Object o) {
+//			if (o == null) return false;
+//			if (o == this) return true;
+//			if (!(o instanceof MatchHostUntil)) return false;
+//			return super.equals(o);
+//		}
+//	}
 
 	static class MatchIntegerUntil extends MatchUntil<Integer> {
 		public MatchIntegerUntil(BiConsumer<ParserState,Integer> consumer, char end) {
@@ -894,6 +902,8 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
+	// TODO: Get rid of this and replace with one of the other matching classes and pass the predicate to a new
+	// constructor
 	/**
 	 * A matcher used for host names and IP addresses.
 	 */
