@@ -558,7 +558,7 @@ public class ConvertToEventTest {
     public void testScenario() {
         // <%{INT:facilityPriority>%{INT:year} %{MONTH:month} %{INT:day} %{INT:hour}:%{INT:minute}:%{INT:second} %{STRING:timezone} %{STRING:hostname} %{STRING:message}
         String messageContent = "1,2017/06/02 01:59:06,0009C102229, THREAT";
-        String syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT *kc2dmz-fw-01* " + messageContent;
+        String syslogMessage = "<12> 2017 Jul 6 08:42:31 CDT *kc2dmz-fw-01{}* " + messageContent;
         Event event = parseSyslog("testScenario", radixConfig, syslogMessage, new Date());
         assertEquals(messageContent, event.getLogmsg().getContent());
 

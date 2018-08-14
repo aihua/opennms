@@ -62,12 +62,6 @@ import org.slf4j.LoggerFactory;
 public class ParserStageSequenceBuilder {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ParserStageSequenceBuilder.class);
-	private static final CharPredicate hostNameMatcher = c -> Character.isDigit(c) || Character.isLetter(c)
-			|| "-._".indexOf(c) >= 0;
-	private static final CharPredicate ipAddressMatcher = c -> Character.digit(c, 16) >= 0
-			|| ".:".indexOf(c) > 0;
-	private static final CharPredicate hostnameOrIPMatcher = c -> hostNameMatcher.test(c)
-			|| ipAddressMatcher.test(c);
 
 	// There's no builtin predicate for char primitives... so here's one
 	@FunctionalInterface
@@ -164,6 +158,33 @@ public class ParserStageSequenceBuilder {
 		m_stages.add(stage);
 	}
 
+	/**
+	 * Gets the correct predicate for matching the given type of host.
+	 * 
+	 * @param pattern the pattern representing the type of host
+	 * @return the predicate
+	 */
+	private static CharPredicate getHostMatcherForPattern(GrokParserStageSequenceBuilder.GrokPattern pattern) {
+		// Match only valid hostname characters ('_' is technically invalid but we use it in tests)
+		final CharPredicate hostNameMatcher = c -> Character.isDigit(c) || Character.isLetter(c) ||
+				"-._".indexOf(c) >= 0;
+		// Match only valid IP address characters, IPv4 and IPv6
+		final CharPredicate ipAddressMatcher = c -> Character.digit(c, 16) >= 0 || ".:".indexOf(c) > 0;
+		// Match any characters valid in a hostname or an IP address
+		final CharPredicate hostnameOrIPMatcher = c -> hostNameMatcher.test(c) || ipAddressMatcher.test(c);
+
+		switch (pattern) {
+			case HOSTNAME:
+				return hostNameMatcher;
+			case HOSTNAMEORIP:
+				return hostnameOrIPMatcher;
+			case IPADDRESS:
+				return ipAddressMatcher;
+			default:
+				throw new IllegalArgumentException("Unsupported pattern.");
+		}
+	}
+	
 	public ParserStageSequenceBuilder whitespace() {
 		addStage(new MatchWhitespace());
 		return this;
@@ -186,30 +207,8 @@ public class ParserStageSequenceBuilder {
 
 	public ParserStageSequenceBuilder hostMatcherForPattern(GrokParserStageSequenceBuilder.GrokPattern pattern,
 															BiConsumer<ParserState, String> consumer) {
-		switch (pattern) {
-			case HOSTNAME:
-				return hostname(consumer);
-			case HOSTNAMEORIP:
-				return hostnameOrIP(consumer);
-			case IPADDRESS:
-				return ipAddress(consumer);
-			default:
-				throw new IllegalArgumentException("Unsupported pattern.");
-		}
-	}
-
-	public ParserStageSequenceBuilder hostname(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, hostNameMatcher));
-		return this;
-	}
-
-	public ParserStageSequenceBuilder ipAddress(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, ipAddressMatcher));
-		return this;
-	}
-
-	public ParserStageSequenceBuilder hostnameOrIP(BiConsumer<ParserState, String> consumer) {
-		addStage(new HostMatcher(consumer, hostnameOrIPMatcher));
+		CharPredicate matcher = getHostMatcherForPattern(pattern);
+		addStage(new MatchOnly(consumer, Integer.MAX_VALUE, matcher));
 		return this;
 	}
 
@@ -225,31 +224,15 @@ public class ParserStageSequenceBuilder {
 	}
 
 	public ParserStageSequenceBuilder hostUntilForPattern(GrokParserStageSequenceBuilder.GrokPattern pattern,
-														  String ends, BiConsumer<ParserState,String> consumer) {
-		switch (pattern) {
-			case HOSTNAME:
-				return hostNameUntil(ends, consumer);
-			case HOSTNAMEORIP:
-				return hostNameOrIPUntil(ends, consumer);
-			case IPADDRESS:
-				return ipAddressUntil(ends, consumer);
-			default:
-				throw new IllegalArgumentException("Unsupported pattern.");
-		}
-	}
+														  String ends, BiConsumer<ParserState, String> consumer) {
 
-	public ParserStageSequenceBuilder hostNameUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchStringUntil(consumer, ends, hostNameMatcher));		
+		CharPredicate matcher = getHostMatcherForPattern(pattern);
+		addStage(new MatchStringUntil(consumer, ends, matcher));
 		return this;
 	}
 
-	public ParserStageSequenceBuilder hostNameOrIPUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchStringUntil(consumer, ends, hostnameOrIPMatcher));
-		return this;
-	}
-
-	public ParserStageSequenceBuilder ipAddressUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchStringUntil(consumer, ends, ipAddressMatcher));
+	public ParserStageSequenceBuilder stringUntil(String ends, BiConsumer<ParserState,String> consumer) {
+		addStage(new MatchStringUntil(consumer, ends));
 		return this;
 	}
 
@@ -265,11 +248,6 @@ public class ParserStageSequenceBuilder {
 
 	public ParserStageSequenceBuilder intUntilWhitespace(BiConsumer<ParserState,Integer> consumer) {
 		addStage(new MatchIntegerUntil(consumer, MatchUntil.WHITESPACE));
-		return this;
-	}
-
-	public ParserStageSequenceBuilder stringUntil(String ends, BiConsumer<ParserState,String> consumer) {
-		addStage(new MatchStringUntil(consumer, ends));
 		return this;
 	}
 
@@ -726,6 +704,63 @@ public class ParserStageSequenceBuilder {
 	}
 
 	/**
+	 * Matches a sequence of characters that contains only the given characters.
+	 */
+	static class MatchOnly extends AbstractParserStage<String> {
+		private final CharPredicate m_charMatcher;
+		private final int m_length;
+
+		public MatchOnly(BiConsumer<ParserState, String> consumer, int length, CharPredicate charMatcher) {
+			super(consumer);
+			m_length = length;
+			m_charMatcher = charMatcher;
+		}
+
+		public int getLength() {
+			return m_length;
+		}
+
+		@Override
+		public AcceptResult acceptChar(ParserStageState state, char c) {
+			if (getAccumulatedSize(state) >= m_length) {
+				return AcceptResult.COMPLETE_AFTER_CONSUMING;
+			} else if (m_charMatcher.test(c)) {
+				accumulate(state, c);
+				return AcceptResult.CONTINUE;
+			} else {
+				// If any characters were accumulated, complete
+				if (getAccumulatedSize(state) > 0) {
+					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
+				} else {
+					return AcceptResult.CANCEL;
+				}
+			}
+		}
+
+		@Override
+		public String getValue(ParserStageState state) {
+			return getAccumulatedValue(state);
+		}
+
+		@Override
+		public String toString() {
+			return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
+					.append("length", m_length)
+					.toString();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (o == null) return false;
+			if (o == this) return true;
+			if (!(o instanceof MatchOnly)) return false;
+			MatchOnly other = (MatchOnly) o;
+			return Objects.equals(m_length, other.getLength()) &&
+					Objects.equals(m_resultConsumer, other.m_resultConsumer);
+		}
+	}
+
+	/**
 	 * Match a string terminated by a character in a list of end tokens.
 	 */
 	static abstract class MatchUntil<R> extends AbstractParserStage<R> {
@@ -735,7 +770,7 @@ public class ParserStageSequenceBuilder {
 		protected boolean m_endOnwhitespace = false;
 
 		// By default we will allow any character through
-		private CharPredicate charMatcher = (c) -> true;
+		private CharPredicate m_charMatcher = (c) -> true;
 
 		MatchUntil(BiConsumer<ParserState,R> consumer, char end) {
 			super(consumer);
@@ -760,14 +795,14 @@ public class ParserStageSequenceBuilder {
 
 		MatchUntil(BiConsumer<ParserState,R> consumer, String end, CharPredicate charMatcher) {
 			this(consumer, end);
-			this.charMatcher = charMatcher;
+			m_charMatcher = charMatcher;
 		}
 		
 
 		@Override
 		public AcceptResult acceptChar(ParserStageState state, char c) {
 			for (char end : m_end) {
-				if (end == c || ! charMatcher.test(c)) {
+				if (end == c || ! m_charMatcher.test(c)) {
 					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
 				}
 			}
@@ -827,46 +862,6 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
-	/**
-	 * TODO
-	 */
-//	static class MatchHostUntil extends MatchStringUntil {
-//		private final CharPredicate charMatcher;
-//		
-//		public MatchHostUntil(BiConsumer<ParserState,String> consumer, char end, CharPredicate charMatcher) {
-//			super(consumer, end);
-//			this.charMatcher = charMatcher;
-//		}
-//
-//		public MatchHostUntil(BiConsumer<ParserState,String> consumer, String ends, CharPredicate charMatcher) {
-//			super(consumer, ends);
-//			this.charMatcher = charMatcher;
-//		}
-//
-//		@Override
-//		public AcceptResult acceptChar(ParserStageState state, char c) {
-//			for (char end : m_end) {
-//				if (end == c || ! charMatcher.test(c)) {
-//					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
-//				}
-//			}
-//			// TODO: Make this more efficient?
-//			if (m_endOnwhitespace && "".equals(String.valueOf(c).trim())) {
-//				return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
-//			}
-//			accumulate(state, c);
-//			return AcceptResult.CONTINUE;
-//		}
-//
-//		@Override
-//		public boolean equals(Object o) {
-//			if (o == null) return false;
-//			if (o == this) return true;
-//			if (!(o instanceof MatchHostUntil)) return false;
-//			return super.equals(o);
-//		}
-//	}
-
 	static class MatchIntegerUntil extends MatchUntil<Integer> {
 		public MatchIntegerUntil(BiConsumer<ParserState,Integer> consumer, char end) {
 			super(consumer, end);
@@ -902,54 +897,6 @@ public class ParserStageSequenceBuilder {
 		}
 	}
 
-	// TODO: Get rid of this and replace with one of the other matching classes and pass the predicate to a new
-	// constructor
-	/**
-	 * A matcher used for host names and IP addresses.
-	 */
-	static class HostMatcher extends AbstractParserStage<String> {
-		private final CharPredicate charMatcher;
-
-		HostMatcher(BiConsumer<ParserState, String> consumer, CharPredicate charMatcher) {
-			super(consumer);
-			this.charMatcher = charMatcher;
-		}
-
-		@Override
-		public AcceptResult acceptChar(ParserStageState state, char c) {
-			if (charMatcher.test(c)) {
-				accumulate(state, c);
-				return AcceptResult.CONTINUE;
-			} else {
-				// If any characters were accumulated, complete
-				if (getAccumulatedSize(state) > 0) {
-					return AcceptResult.COMPLETE_WITHOUT_CONSUMING;
-				} else {
-					return AcceptResult.CANCEL;
-				}
-			}
-		}
-
-		@Override
-		public String getValue(ParserStageState state) {
-			return getAccumulatedValue(state);
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (o == null) return false;
-			if (o == this) return true;
-			if (!(o instanceof HostMatcher)) return false;
-			HostMatcher other = (HostMatcher) o;
-			return Objects.equals(m_resultConsumer, other.m_resultConsumer);
-		}
-
-		@Override
-		public String toString() {
-			return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).toString();
-		}
-	}
-	
 	/**
 	 * Match an integer.
 	 */

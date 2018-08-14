@@ -419,7 +419,7 @@ public class SyslogMessage implements Cloneable {
     }
 
     /**
-     * TODO
+     * Keys for storing/retrieving sequence number and component ID in parms.
      */
     public enum ParameterKeys {
         sequenceNum,
